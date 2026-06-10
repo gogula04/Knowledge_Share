@@ -2,7 +2,6 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { query } from "@/lib/db";
 import { env } from "@/lib/env";
-import { demoUsers } from "@/lib/demo-mode";
 import { type UserRole } from "@/lib/types";
 
 const encoder = new TextEncoder();
@@ -71,19 +70,15 @@ export async function getRoleIdentity(role: UserRole) {
       } satisfies AuthUser;
     }
   } catch {
-    // Fall back to the in-memory role personas when the database is unavailable.
   }
 
-  const fallback = demoUsers.find((entry) => entry.role === role);
-  return fallback
-    ? {
-        id: fallback.id,
-        email: fallback.email,
-        displayName: fallback.displayName,
-        role: fallback.role,
-        avatarUrl: fallback.avatarUrl
-      }
-    : null;
+  return {
+    id: `role-${role}`,
+    email: roleEmails[role],
+    displayName: role === "admin" ? "Admin" : role === "team_lead" ? "Team Lead" : "Team Member",
+    role,
+    avatarUrl: null
+  };
 }
 
 export async function getCurrentUser() {
@@ -93,23 +88,14 @@ export async function getCurrentUser() {
 
   try {
     const session = await readSessionToken(token);
-    if (session.id.startsWith("demo-")) {
-      const fallback = demoUsers.find((entry) => entry.id === session.id || entry.email === session.email || entry.role === session.role);
-      return fallback
-        ? {
-            id: fallback.id,
-            email: fallback.email,
-            displayName: fallback.displayName,
-            role: fallback.role,
-            avatarUrl: fallback.avatarUrl
-          }
-        : {
-            id: session.id,
-            email: session.email,
-            displayName: session.displayName,
-            role: session.role,
-            avatarUrl: null
-          };
+    if (session.id.startsWith("role-")) {
+      return {
+        id: session.id,
+        email: session.email,
+        displayName: session.displayName,
+        role: session.role,
+        avatarUrl: null
+      };
     }
     try {
       const rows = await query<{
@@ -139,22 +125,13 @@ export async function getCurrentUser() {
       // Fall through to the signed session identity below.
     }
 
-    const fallback = demoUsers.find((entry) => entry.id === session.id || entry.email === session.email || entry.role === session.role);
-    return fallback
-      ? {
-          id: fallback.id,
-          email: fallback.email,
-          displayName: fallback.displayName,
-          role: fallback.role,
-          avatarUrl: fallback.avatarUrl
-        }
-      : {
-          id: session.id || `role-${session.role}`,
-          email: session.email || `${session.role}@fms.local`,
-          displayName: session.displayName || (session.role === "admin" ? "Admin" : session.role === "team_lead" ? "Team Lead" : "Team Member"),
-          role: session.role,
-          avatarUrl: null
-        };
+    return {
+      id: session.id || `role-${session.role}`,
+      email: session.email || roleEmails[session.role],
+      displayName: session.displayName || (session.role === "admin" ? "Admin" : session.role === "team_lead" ? "Team Lead" : "Team Member"),
+      role: session.role,
+      avatarUrl: null
+    };
   } catch {
     return null;
   }

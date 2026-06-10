@@ -3,14 +3,6 @@ import { type AuthUser } from "@/lib/auth";
 import { type AccessScope, type ResourceSummary, type SourceType, type WorkspaceType } from "@/lib/types";
 import { estimateFreshnessDays } from "@/lib/chunking";
 import { deleteStoredFile } from "@/lib/storage";
-import {
-  createDemoResource,
-  deleteDemoResource,
-  getDemoResourceById,
-  listDemoResourcesForUser,
-  reindexDemoResource
-} from "@/lib/demo-resource-store";
-import { recentSearches } from "@/lib/sample-data";
 
 export type ResourceFilter = {
   workspaceType?: WorkspaceType | "all";
@@ -67,26 +59,6 @@ export function isDatabaseUnavailable(error: unknown) {
 }
 
 export async function getWorkspaceOverview(user: AuthUser) {
-  if (user.id.startsWith("demo-")) {
-    return {
-      teamWorkspaces: [
-        {
-          team_id: "demo-team-foundation-framework",
-          team_name: "Foundation and Framework",
-          team_slug: "foundation-framework",
-          resource_count: 0,
-          lead_user_id: user.role === "admin" || user.role === "team_lead" ? user.id : null,
-          member_count: 3
-        }
-      ],
-      commonWorkspace: {
-        workspace_id: "demo-common-workspace",
-        workspace_name: "Common Workspace",
-        resource_count: 0
-      }
-    };
-  }
-
   try {
     const teamRows = await query<{
       team_id: string;
@@ -137,47 +109,13 @@ export async function getWorkspaceOverview(user: AuthUser) {
     };
   } catch {
     return {
-      teamWorkspaces: [
-        {
-          team_id: "demo-team-foundation-framework",
-          team_name: "Foundation and Framework",
-          team_slug: "foundation-framework",
-          resource_count: 0,
-          lead_user_id: user.role === "admin" || user.role === "team_lead" ? user.id : null,
-          member_count: 3
-        }
-      ],
-      commonWorkspace: {
-        workspace_id: "demo-common-workspace",
-        workspace_name: "Common Workspace",
-        resource_count: 0
-      }
+      teamWorkspaces: [],
+      commonWorkspace: null
     };
   }
 }
 
 export async function getDashboardData(user: AuthUser) {
-  if (user.id.startsWith("demo-")) {
-    return {
-      teams: [
-        {
-          team_id: "demo-team-foundation-framework",
-          team_name: "Foundation and Framework",
-          team_slug: "foundation-framework",
-          is_lead: user.role === "admin" || user.role === "team_lead",
-          resource_count: 0,
-          member_count: 3
-        }
-      ],
-      totalResources: 0,
-      staleResources: 0,
-      recentSearches,
-      pinnedResources: [],
-      teamWorkspaceCount: 1,
-      commonWorkspaceCount: 1
-    };
-  }
-
   try {
     const teams = await query<{
       team_id: string;
@@ -283,31 +221,18 @@ export async function getDashboardData(user: AuthUser) {
     };
   } catch {
     return {
-      teams: [
-        {
-          team_id: "demo-team-foundation-framework",
-          team_name: "Foundation and Framework",
-          team_slug: "foundation-framework",
-          is_lead: user.role === "admin" || user.role === "team_lead",
-          resource_count: 0,
-          member_count: 3
-        }
-      ],
+      teams: [],
       totalResources: 0,
       staleResources: 0,
-      recentSearches,
+      recentSearches: [],
       pinnedResources: [],
-      teamWorkspaceCount: 1,
-      commonWorkspaceCount: 1
+      teamWorkspaceCount: 0,
+      commonWorkspaceCount: 0
     };
   }
 }
 
 export async function listResources(user: AuthUser, filter: ResourceFilter = {}) {
-  if (user.id.startsWith("demo-")) {
-    return listDemoResourcesForUser(user, filter);
-  }
-
   try {
     const workspaceType = filter.workspaceType ?? "all";
     const freshness = filter.freshness ?? "all";
@@ -432,13 +357,9 @@ export async function listResources(user: AuthUser, filter: ResourceFilter = {})
       excerpt: row.summary ?? `Indexed chunks: ${row.total_chunks}`
     })) satisfies ResourceSummary[];
 
-    const demoResources = await listDemoResourcesForUser(user, filter, teamIds);
-    return [...dbResources, ...demoResources];
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) {
-      throw error;
-    }
-    return listDemoResourcesForUser(user, filter);
+    return dbResources;
+  } catch {
+    return [];
   }
 }
 
@@ -516,34 +437,8 @@ export async function getResourceById(resourceId: string, user: AuthUser) {
       freshStatus: freshStatus(row.last_indexed_at),
       excerpt: row.summary ?? `Indexed chunks: ${row.total_chunks}`
     } satisfies ResourceSummary;
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) {
-      throw error;
-    }
-
-    const resource = await getDemoResourceById(resourceId);
-    if (!resource) return null;
-    if (user.role !== "admin" && resource.workspaceType !== "common" && resource.teamId !== "demo-team-foundation-framework") {
-      return null;
-    }
-    return {
-      id: resource.id,
-      title: resource.title,
-      sourceType: resource.sourceType,
-      workspaceType: resource.workspaceType,
-      teamName: resource.teamName,
-      uploadedBy: resource.uploadedByName ?? "System",
-      createdAt: resource.createdAt,
-      lastIndexedAt: resource.lastIndexedAt,
-      originalSourceLink: resource.originalSourceLink,
-      fileName: resource.fileName,
-      category: resource.category,
-      tags: resource.tags ?? [],
-      accessScope: resource.accessScope,
-      sourceAuthorityLevel: resource.sourceAuthorityLevel,
-      freshStatus: freshStatus(resource.lastIndexedAt),
-      excerpt: resource.excerpt ?? resource.summary ?? resource.originalSourceLink ?? "Demo resource"
-    } satisfies ResourceSummary;
+  } catch {
+    return null;
   }
 }
 
@@ -625,26 +520,7 @@ export async function createResourceDocument(input: {
 
     return result;
   } catch (error) {
-    if (!isDatabaseUnavailable(error)) {
-      throw error;
-    }
-
-    return createDemoResource({
-      title: input.title,
-      workspaceType: input.workspaceType,
-      teamId: input.teamId ?? null,
-      sourceType: input.sourceType,
-      originalSourceLink: input.originalSourceLink ?? null,
-      fileName: input.fileName ?? null,
-      filePath: input.filePath ?? null,
-      category: input.category ?? null,
-      tags: input.tags ?? [],
-      accessScope: input.accessScope ?? (input.workspaceType === "common" ? "common" : "team"),
-      sourceAuthorityLevel: input.sourceAuthorityLevel ?? (input.workspaceType === "common" ? 5 : 4),
-      uploadedBy: input.uploadedBy ?? null,
-      uploadedByName: input.uploadedByName ?? null,
-      summary: input.summary ?? null
-    });
+    throw error;
   }
 }
 
@@ -669,15 +545,7 @@ export async function markResourceDeleted(resourceId: string, user: AuthUser) {
       }
     });
   } catch (error) {
-    if (!isDatabaseUnavailable(error)) {
-      throw error;
-    }
-
-    const resource = await getDemoResourceById(resourceId);
-    if (resource?.filePath) {
-      await deleteStoredFile(resource.filePath);
-    }
-    await deleteDemoResource(resourceId);
+    throw error;
   }
 }
 
@@ -689,10 +557,6 @@ export async function reindexResource(resourceId: string, user: AuthUser) {
       [resourceId, JSON.stringify({ requestedBy: user.id })]
     );
   } catch (error) {
-    if (!isDatabaseUnavailable(error)) {
-      throw error;
-    }
-
-    await reindexDemoResource(resourceId);
+    throw error;
   }
 }

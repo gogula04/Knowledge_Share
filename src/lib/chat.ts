@@ -2,6 +2,7 @@ import { query, transaction } from "@/lib/db";
 import { type AuthUser } from "@/lib/auth";
 import { answerQuestion } from "@/lib/rag";
 import { type ChatAnswer, type WorkspaceScope } from "@/lib/types";
+import { isDatabaseUnavailable } from "@/lib/resources";
 
 export async function listChatSessions(user: AuthUser) {
   return query<{
@@ -83,77 +84,102 @@ export async function askKnowledgeQuestion(input: {
     teamId: input.teamId ?? null
   });
 
-  const sessionId = await createOrUpdateChatSession({
-    user: input.user,
-    sessionId: input.sessionId,
-    title: input.question.slice(0, 56),
-    workspaceScope: input.workspaceScope,
-    teamId: input.teamId ?? null
-  });
+  let sessionId: string | null = input.sessionId ?? null;
+  try {
+    sessionId = await createOrUpdateChatSession({
+      user: input.user,
+      sessionId: input.sessionId,
+      title: input.question.slice(0, 56),
+      workspaceScope: input.workspaceScope,
+      teamId: input.teamId ?? null
+    });
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+  }
 
-  await transaction(async (client) => {
-    await client.query(
-      `insert into chat_messages (session_id, user_id, role, content)
-       values ($1, $2, 'user', $3)
-       returning id`,
-      [sessionId, input.user.id, input.question]
-    );
-
-    const assistantMessage = await client.query<{ id: string }>(
-      `insert into chat_messages (session_id, role, content, citations, metadata)
-       values ($1, 'assistant', $2, $3::jsonb, $4::jsonb)
-       returning id`,
-      [
-        sessionId,
-        answer.answer,
-        JSON.stringify(answer.citations),
-        JSON.stringify({
-          confidence: answer.confidence,
-          staleWarning: answer.staleWarning,
-          noRelevantInfo: answer.noRelevantInfo,
-          followUps: answer.followUps,
-          conflicts: answer.conflicts,
-          usedWorkspaces: answer.usedWorkspaces
-        })
-      ]
-    );
-
-    for (const [index, citation] of answer.citations.entries()) {
+  try {
+    await transaction(async (client) => {
       await client.query(
-        `insert into source_citations (message_id, document_id, chunk_id, citation_order, snippet, source_link, confidence)
-         values ($1, $2, null, $3, $4, $5, $6)`,
+        `insert into chat_messages (session_id, user_id, role, content)
+         values ($1, $2, 'user', $3)
+         returning id`,
+        [sessionId, input.user.id, input.question]
+      );
+
+      const assistantMessage = await client.query<{ id: string }>(
+        `insert into chat_messages (session_id, role, content, citations, metadata)
+         values ($1, 'assistant', $2, $3::jsonb, $4::jsonb)
+         returning id`,
         [
-          assistantMessage.rows[0].id,
-          citation.documentId,
-          index + 1,
-          citation.snippet,
-          citation.sourceLink,
-          answer.confidence === "high" ? 0.95 : answer.confidence === "medium" ? 0.75 : 0.5
+          sessionId,
+          answer.answer,
+          JSON.stringify(answer.citations),
+          JSON.stringify({
+            confidence: answer.confidence,
+            staleWarning: answer.staleWarning,
+            noRelevantInfo: answer.noRelevantInfo,
+            followUps: answer.followUps,
+            conflicts: answer.conflicts,
+            usedWorkspaces: answer.usedWorkspaces
+          })
         ]
       );
-    }
-  });
 
-  await query(
-    `insert into search_analytics (user_id, session_id, question, workspace_scope, top_document_ids, result_count, confidence)
-     values ($1, $2, $3, $4, $5::text[], $6, $7)`,
-    [
-      input.user.id,
-      sessionId,
-      input.question,
-      input.workspaceScope,
-      answer.citations.map((citation) => citation.documentId),
-      answer.citations.length,
-      answer.confidence
-    ]
-  );
+      for (const [index, citation] of answer.citations.entries()) {
+        await client.query(
+          `insert into source_citations (message_id, document_id, chunk_id, citation_order, snippet, source_link, confidence)
+           values ($1, $2, null, $3, $4, $5, $6)`,
+          [
+            assistantMessage.rows[0].id,
+            citation.documentId,
+            index + 1,
+            citation.snippet,
+            citation.sourceLink,
+            answer.confidence === "high" ? 0.95 : answer.confidence === "medium" ? 0.75 : 0.5
+          ]
+        );
+      }
+    });
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    await query(
+      `insert into search_analytics (user_id, session_id, question, workspace_scope, top_document_ids, result_count, confidence)
+       values ($1, $2, $3, $4, $5::text[], $6, $7)`,
+      [
+        input.user.id,
+        sessionId,
+        input.question,
+        input.workspaceScope,
+        answer.citations.map((citation) => citation.documentId),
+        answer.citations.length,
+        answer.confidence
+      ]
+    );
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+  }
 
   if (answer.noRelevantInfo) {
-    await query(
-      `insert into unanswered_questions (question, user_id, workspace_scope, reason)
-       values ($1, $2, $3, $4)`,
-      [input.question, input.user.id, input.workspaceScope, "No sufficiently relevant indexed sources were found."]
-    );
+    try {
+      await query(
+        `insert into unanswered_questions (question, user_id, workspace_scope, reason)
+         values ($1, $2, $3, $4)`,
+        [input.question, input.user.id, input.workspaceScope, "No sufficiently relevant indexed sources were found."]
+      );
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) {
+        throw error;
+      }
+    }
   }
 
   return {

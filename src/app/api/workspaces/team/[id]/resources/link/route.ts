@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { createResourceDocument } from "@/lib/resources";
+import { createResourceDocument, isDatabaseUnavailable } from "@/lib/resources";
 import { userCanManageTeam } from "@/lib/permissions";
 import { query } from "@/lib/db";
 
@@ -23,19 +23,27 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Title and URL are required." }, { status: 400 });
   }
 
-  const documentId = await createResourceDocument({
-    title: body.title,
-    workspaceType: "team",
-    teamId,
-    sourceType: body.sourceType ?? "Other",
-    originalSourceLink: body.url,
-    category: body.category ?? null,
-    tags: Array.isArray(body.tags) ? body.tags : [],
-    accessScope: "team",
-    sourceAuthorityLevel: Number(body.authority ?? 4),
-    uploadedBy: user,
-    summary: body.summary ?? null
-  });
+  let documentId: string;
+  try {
+    documentId = await createResourceDocument({
+      title: body.title,
+      workspaceType: "team",
+      teamId,
+      sourceType: body.sourceType ?? "Other",
+      originalSourceLink: body.url,
+      category: body.category ?? null,
+      tags: Array.isArray(body.tags) ? body.tags : [],
+      accessScope: "team",
+      sourceAuthorityLevel: Number(body.authority ?? 4),
+      uploadedBy: user,
+      summary: body.summary ?? null
+    });
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
+    }
+    throw error;
+  }
 
   try {
     await query(
@@ -44,7 +52,7 @@ export async function POST(request: Request, context: RouteContext) {
       [user.id, documentId, JSON.stringify({ title: body.title, url: body.url, workspaceType: "team", teamId })]
     );
   } catch {
-    // Audit logging is best-effort in demo mode.
+    // Audit logging is best-effort and must not block resource creation.
   }
 
   return NextResponse.json({ ok: true, documentId });

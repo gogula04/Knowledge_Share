@@ -1,6 +1,5 @@
 import { query } from "@/lib/db";
 import { type AuthUser } from "@/lib/auth";
-import { seedTeams, seedUsers } from "@/lib/sample-data";
 
 const fallbackRoles = [
   { key: "normal", name: "Team Member", description: "Can browse and ask questions." },
@@ -50,20 +49,8 @@ export async function getSettingsOverview() {
       staleDays: 30,
       authorityWeights: { gitlab: 5, wiki: 4, pdf: 3, other: 2 },
       sourceCategories: ["Onboarding", "Troubleshooting", "Runbooks", "Architecture"],
-      teams: seedTeams.map((team, index) => ({
-        id: `demo-team-${index + 1}`,
-        name: team.name,
-        slug: team.slug,
-        description: team.description,
-        lead_user_id: seedUsers.find((user) => user.role === "team_lead") ? "demo-lead" : null
-      })),
-      users: seedUsers.map((user, index) => ({
-        id: `demo-user-${index + 1}`,
-        email: user.email,
-        display_name: user.displayName,
-        role: user.role,
-        is_active: true
-      }))
+      teams: [],
+      users: []
     };
   }
 }

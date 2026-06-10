@@ -5,8 +5,8 @@ import { getDashboardData, getWorkspaceOverview } from "@/lib/resources";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SourceCard } from "@/components/source-card";
-import { recentSearches } from "@/lib/sample-data";
 import { formatDateTime } from "@/lib/utils";
 
 function MetricCard({
@@ -143,9 +143,6 @@ export default async function DashboardPage() {
   const workspace = await getWorkspaceOverview(user);
   const primaryTeam = dashboard.teams[0] ?? null;
   const commonWorkspace = workspace.commonWorkspace;
-  const teamBadges = dashboard.teams.length
-    ? dashboard.teams
-    : [{ team_id: "fallback", team_name: "Foundation and Framework", team_slug: "foundation-framework", is_lead: false, resource_count: 0, member_count: 0 }];
 
   return (
     <div className="space-y-6">
@@ -206,7 +203,7 @@ export default async function DashboardPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {teamBadges.map((team) => (
+                  {dashboard.teams.map((team) => (
                     <Badge key={team.team_id} tone="muted">
                       {team.team_name ?? "Team workspace"}
                     </Badge>
@@ -281,12 +278,29 @@ export default async function DashboardPage() {
             <CardDescription>{copy.snapshotDescription}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-2xl border border-border/80 bg-bg/55 p-4">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Search className="h-3.5 w-3.5" />
-                {copy.searchPrompt}
-              </div>
-            </div>
+            <form action="/chat" method="GET" className="rounded-2xl border border-border/80 bg-bg/55 p-4">
+              <label className="block space-y-2">
+                <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Search className="h-3.5 w-3.5" />
+                  Search live knowledge
+                </span>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Input
+                    name="q"
+                    defaultValue=""
+                    placeholder={copy.searchPrompt}
+                    aria-label="Search live knowledge"
+                    className="h-11"
+                  />
+                  <Button type="submit" className="shrink-0">
+                    Search
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Press Enter or click Search to open chat with this question prefilled.
+                </p>
+              </label>
+            </form>
             <div className="space-y-3 rounded-2xl border border-border/80 bg-panel/90 p-4">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
                 <BrainCircuit className="h-3.5 w-3.5 text-accent" />
@@ -345,17 +359,25 @@ export default async function DashboardPage() {
             <Badge tone="muted">{dashboard.recentSearches.length} entries</Badge>
           </CardHeader>
           <CardContent className="space-y-3">
-            {(dashboard.recentSearches.length ? dashboard.recentSearches : recentSearches).map((item, index) => (
-              <div key={typeof item === "string" ? item : item.question} className="flex items-center justify-between rounded-2xl border border-border/80 bg-bg/40 p-4">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{typeof item === "string" ? item : item.question}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {typeof item === "string" ? "Suggested search" : formatDateTime(item.created_at)}
-                  </p>
-                </div>
-                <span className="text-xs text-muted-foreground">#{index + 1}</span>
+            {dashboard.recentSearches.length ? (
+              dashboard.recentSearches.map((item, index) => (
+                <Link
+                  key={item.question}
+                  href={`/chat?q=${encodeURIComponent(item.question)}`}
+                  className="flex items-center justify-between rounded-2xl border border-border/80 bg-bg/40 p-4 transition hover:border-accent/30 hover:bg-white/5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{item.question}</p>
+                    <p className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                </Link>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-dashed border-border/80 bg-bg/20 p-5 text-sm text-muted-foreground">
+                No recent searches yet. Ask a question in chat to populate this section.
               </div>
-            ))}
+            )}
           </CardContent>
         </Card>
 

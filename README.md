@@ -12,7 +12,7 @@ An internal AI knowledge workspace for teams that need a role-aware place to sto
 - Freshness, authority, and stale-content awareness
 - Analytics for searches, unanswered questions, and stale docs
 - Supabase PostgreSQL-ready connection setup
-- Demo-safe fallback behavior when the database is temporarily unavailable
+- Live database-backed behavior with honest empty states when content has not been indexed yet
 
 ## Product Flow
 
@@ -67,8 +67,7 @@ src/
 db/
   schema.sql        Database schema and extension setup
 scripts/
-  seed.ts           Seed script for demo users and workspace data
-seed-data/          Sample knowledge source payloads
+  seed.ts           Bootstrap script for roles, users, and workspace metadata
 public/             Static assets
 ```
 
@@ -106,7 +105,7 @@ JWT_SECRET=change-me-to-a-long-random-secret
 
 - Apply `db/schema.sql`
 - Make sure `pgvector` is available
-- Seed the demo data after the schema is ready
+- Seed the bootstrap data after the schema is ready
 
 ### 4. Seed the app
 
@@ -131,28 +130,28 @@ Official reference:
 
 - [Supabase: Connect to your database](https://supabase.com/docs/guides/database/connecting-to-postgres)
 
-## Demo Roles
+## Role Presets
 
 - Admin
 - Team Lead
 - Normal User
 
-These demo roles let you test role-based access without password-based auth.
+These role presets let you test role-based access without password-based auth.
 
 ## Available Scripts
 
 - `npm run dev` - start the development server
 - `npm run build` - production build
 - `npm run start` - start the production server
-- `npm run seed` - seed demo users, teams, and content
+- `npm run seed` - seed bootstrap users, teams, and workspace metadata
 - `npm run worker` - start the ingestion worker
 - `npm run db:check` - validate the database connection and schema
 
-## Notes On Fallback Behavior
+## Data Notes
 
-- The app is designed to keep the UI usable during database outages in demo mode.
-- Some resource actions can fall back to a local demo store if the database is unavailable.
-- For production, point the app at a healthy Supabase database and treat fallback behavior as a safety net, not the primary persistence layer.
+- The app renders live PostgreSQL data and shows honest empty states when content has not been indexed yet.
+- Role-based login is intentionally lightweight for internal presentations.
+- Use a healthy Supabase database for the full experience, including uploads, chat history, analytics, and resource management.
 
 ## Troubleshooting
 
@@ -164,4 +163,3 @@ These demo roles let you test role-based access without password-based auth.
 ## License
 
 MIT
-

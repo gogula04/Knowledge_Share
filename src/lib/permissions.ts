@@ -1,25 +1,8 @@
 import { query } from "@/lib/db";
 import { type AuthUser } from "@/lib/auth";
 import { type WorkspaceScope, type WorkspaceType, type UserRole } from "@/lib/types";
-import { seedTeams } from "@/lib/sample-data";
-
-const fallbackTeam = seedTeams[0] ?? {
-  name: "Foundation and Framework",
-  slug: "foundation-framework",
-  description: "Core platform engineering, setup, and framework support."
-};
 
 export async function getUserTeams(userId: string) {
-  if (userId.startsWith("demo-")) {
-    return [
-      {
-        id: "demo-team-foundation-framework",
-        name: fallbackTeam.name,
-        slug: fallbackTeam.slug,
-        is_lead: userId === "demo-admin" || userId === "demo-lead"
-      }
-    ];
-  }
   try {
     return await query<{
       id: string;
@@ -35,15 +18,7 @@ export async function getUserTeams(userId: string) {
       [userId]
     );
   } catch {
-    const isLead = userId === "demo-admin" || userId === "demo-lead" || userId.includes("lead");
-    return [
-      {
-        id: "demo-team-foundation-framework",
-        name: fallbackTeam.name,
-        slug: fallbackTeam.slug,
-        is_lead: isLead
-      }
-    ];
+    return [];
   }
 }
 
@@ -68,7 +43,7 @@ export async function userCanManageTeam(user: AuthUser, teamId: string) {
     );
     return rows[0]?.is_lead ?? false;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -106,6 +81,6 @@ export async function ensureCanAccessWorkspace(user: AuthUser, workspaceType: Wo
     );
     return teamRows.length > 0;
   } catch {
-    return true;
+    return false;
   }
 }

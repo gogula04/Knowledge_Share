@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { reindexResource } from "@/lib/resources";
 import { query } from "@/lib/db";
 import { userCanManageCommon, userCanManageTeam } from "@/lib/permissions";
-import { getDemoResourceById } from "@/lib/demo-resource-store";
+import { isDatabaseUnavailable } from "@/lib/resources";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -21,19 +21,15 @@ export async function POST(_request: Request, context: RouteContext) {
       [id]
     );
     document = rows[0] ?? null;
-  } catch {
-    // Fall back to the demo store below.
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) {
+      throw error;
+    }
+    return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
   }
 
   if (!document) {
-    const demoDocument = await getDemoResourceById(id);
-    if (!demoDocument) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    document = {
-      workspace_type: demoDocument.workspaceType,
-      team_id: demoDocument.teamId ?? null
-    };
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const canManage =
@@ -45,6 +41,13 @@ export async function POST(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  await reindexResource(id, user);
+  try {
+    await reindexResource(id, user);
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
+    }
+    throw error;
+  }
   return NextResponse.json({ ok: true });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Send, Sparkles, ShieldAlert, Link2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,6 +59,8 @@ type ChatWorkspaceProps = {
   initialMessages: MessageItem[];
   teams: TeamItem[];
   initialSessionId: string | null;
+  initialDraft?: string;
+  autoSubmitQuestion?: boolean;
 };
 
 const emptyMessage: MessageItem = {
@@ -71,15 +73,16 @@ const emptyMessage: MessageItem = {
   created_at: new Date().toISOString()
 };
 
-export function ChatWorkspace({ userName, sessions, initialMessages, teams, initialSessionId }: ChatWorkspaceProps) {
+export function ChatWorkspace({ userName, sessions, initialMessages, teams, initialSessionId, initialDraft = "", autoSubmitQuestion = false }: ChatWorkspaceProps) {
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [workspaceScope, setWorkspaceScope] = useState<"team" | "common" | "both">(sessions[0]?.workspace_scope === "team" || sessions[0]?.workspace_scope === "common" ? sessions[0].workspace_scope : "both");
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(teams[0]?.id ?? null);
-  const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<MessageItem[]>(initialMessages.length ? initialMessages : [emptyMessage]);
+  const [draft, setDraft] = useState(initialDraft);
+  const [messages, setMessages] = useState<MessageItem[]>(initialMessages.length ? initialMessages : autoSubmitQuestion ? [] : [emptyMessage]);
   const [onlyHighAuthority, setOnlyHighAuthority] = useState(false);
   const [groupByWorkspace, setGroupByWorkspace] = useState(true);
   const [pending, startTransition] = useTransition();
+  const autoSubmittedRef = useRef(false);
 
   const latestAssistant = useMemo(() => [...messages].reverse().find((message) => message.role === "assistant"), [messages]);
   const visibleCitations = useMemo(() => {
@@ -94,6 +97,10 @@ export function ChatWorkspace({ userName, sessions, initialMessages, teams, init
     const common = visibleCitations.filter((citation) => citation.workspaceType === "common");
     return { team, common };
   }, [visibleCitations]);
+
+  useEffect(() => {
+    setDraft(initialDraft);
+  }, [initialDraft]);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,7 +119,7 @@ export function ChatWorkspace({ userName, sessions, initialMessages, teams, init
     };
   }, [sessionId]);
 
-  async function sendQuestion(question: string) {
+  const sendQuestion = useCallback(async (question: string) => {
     const trimmed = question.trim();
     if (!trimmed) return;
 
@@ -166,7 +173,13 @@ export function ChatWorkspace({ userName, sessions, initialMessages, teams, init
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Something went wrong.");
     }
-  }
+  }, [selectedTeamId, sessionId, workspaceScope]);
+
+  useEffect(() => {
+    if (!autoSubmitQuestion || !initialDraft.trim() || autoSubmittedRef.current) return;
+    autoSubmittedRef.current = true;
+    void sendQuestion(initialDraft);
+  }, [autoSubmitQuestion, initialDraft, sendQuestion]);
 
   return (
     <div className="grid min-h-[calc(100vh-9rem)] gap-4 xl:grid-cols-[260px_minmax(0,1fr)_390px]">

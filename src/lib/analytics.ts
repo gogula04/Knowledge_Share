@@ -1,21 +1,6 @@
 import { query } from "@/lib/db";
 import { type AuthUser } from "@/lib/auth";
 import { getUserTeams } from "@/lib/permissions";
-import { recentSearches } from "@/lib/sample-data";
-
-function buildDemoAnalyticsFallback() {
-  return {
-    mostSearchedTopics: recentSearches.map((question, index) => ({
-      question,
-      count: Math.max(1, recentSearches.length - index)
-    })),
-    unansweredQuestions: [],
-    staleDocs: [],
-    mostUsedDocuments: [],
-    documentationGaps: [],
-    teamUsage: []
-  };
-}
 
 export async function getAnalyticsOverview(user: AuthUser) {
   try {
@@ -119,7 +104,7 @@ export async function getAnalyticsOverview(user: AuthUser) {
     );
 
     return {
-      mostSearchedTopics: searches.length ? searches : buildDemoAnalyticsFallback().mostSearchedTopics,
+      mostSearchedTopics: searches,
       unansweredQuestions: unanswered,
       staleDocs,
       mostUsedDocuments,
@@ -127,6 +112,13 @@ export async function getAnalyticsOverview(user: AuthUser) {
       teamUsage
     };
   } catch {
-    return buildDemoAnalyticsFallback();
+    return {
+      mostSearchedTopics: [],
+      unansweredQuestions: [],
+      staleDocs: [],
+      mostUsedDocuments: [],
+      documentationGaps: [],
+      teamUsage: []
+    };
   }
 }

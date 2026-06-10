@@ -1,8 +1,33 @@
 import { query } from "@/lib/db";
-import { seedTeams, seedUsers } from "@/lib/sample-data";
+
+const bootstrapUsers = [
+  {
+    email: "admin@fms.local",
+    displayName: "Smith Jeshua",
+    role: "admin" as const
+  },
+  {
+    email: "lead@fms.local",
+    displayName: "Venkatesh",
+    role: "team_lead" as const
+  },
+  {
+    email: "engineer@fms.local",
+    displayName: "Taylor Brooks",
+    role: "normal" as const
+  }
+];
+
+const bootstrapTeams = [
+  {
+    name: "Foundation and Framework",
+    slug: "foundation-framework",
+    description: "Core platform engineering, setup, and framework support."
+  }
+];
 
 async function main() {
-  console.log("[seed] resetting demo data");
+  console.log("[seed] resetting bootstrap data");
   await query(
     `truncate table
        resource_pins,
@@ -22,7 +47,7 @@ async function main() {
   );
 
   const createdUsers: Record<string, { id: string; email: string; display_name: string; role: string }> = {};
-  for (const user of seedUsers) {
+  for (const user of bootstrapUsers) {
     const rows = await query<{
       id: string;
       email: string;
@@ -38,7 +63,7 @@ async function main() {
   }
 
   const createdTeams: Record<string, { id: string; name: string; slug: string }> = {};
-  for (const team of seedTeams) {
+  for (const team of bootstrapTeams) {
     const rows = await query<{ id: string; name: string; slug: string }>(
       `insert into teams (name, slug, description, lead_user_id)
        values ($1, $2, $3, $4)
@@ -74,7 +99,7 @@ async function main() {
     [createdTeams["Foundation and Framework"].id]
   );
 
-  console.log("[seed] demo data ready");
+  console.log("[seed] bootstrap data ready");
 }
 
 main().catch((error) => {

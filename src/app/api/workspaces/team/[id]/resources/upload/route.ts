@@ -1,9 +1,9 @@
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { createResourceDocument } from "@/lib/resources";
+import { createResourceDocument, isDatabaseUnavailable } from "@/lib/resources";
 import { userCanManageTeam } from "@/lib/permissions";
-import { saveBufferToStorage } from "@/lib/storage";
+import { deleteStoredFile, saveBufferToStorage } from "@/lib/storage";
 import { query } from "@/lib/db";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -44,19 +44,28 @@ export async function POST(request: Request, context: RouteContext) {
   const bytes = Buffer.from(await file.arrayBuffer());
   const filePath = await saveBufferToStorage(file.name, bytes);
 
-  const documentId = await createResourceDocument({
-    title,
-    workspaceType: "team",
-    teamId,
-    sourceType: inferSourceType(file.name),
-    fileName: file.name,
-    filePath,
-    category,
-    tags,
-    accessScope: "team",
-    sourceAuthorityLevel: Number(formData.get("authority") ?? 4),
-    uploadedBy: user
-  });
+  let documentId: string;
+  try {
+    documentId = await createResourceDocument({
+      title,
+      workspaceType: "team",
+      teamId,
+      sourceType: inferSourceType(file.name),
+      fileName: file.name,
+      filePath,
+      category,
+      tags,
+      accessScope: "team",
+      sourceAuthorityLevel: Number(formData.get("authority") ?? 4),
+      uploadedBy: user
+    });
+  } catch (error) {
+    await deleteStoredFile(filePath).catch(() => undefined);
+    if (isDatabaseUnavailable(error)) {
+      return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
+    }
+    throw error;
+  }
 
   try {
     await query(
@@ -65,7 +74,7 @@ export async function POST(request: Request, context: RouteContext) {
       [user.id, documentId, JSON.stringify({ title, fileName: file.name, workspaceType: "team", teamId })]
     );
   } catch {
-    // Audit logging is best-effort in demo mode.
+    // Audit logging is best-effort and must not block resource creation.
   }
 
   return NextResponse.json({ ok: true, documentId });

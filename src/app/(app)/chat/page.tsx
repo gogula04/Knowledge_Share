@@ -3,13 +3,21 @@ import { getCurrentUser } from "@/lib/auth";
 import { getChatOverview, getChatMessages } from "@/lib/chat";
 import { getUserTeams } from "@/lib/permissions";
 
-export default async function ChatPage() {
+type PageProps = {
+  searchParams?: Promise<{
+    q?: string;
+  }>;
+};
+
+export default async function ChatPage({ searchParams }: PageProps) {
   const user = await getCurrentUser();
   if (!user) return null;
 
+  const params = (await searchParams) ?? {};
+  const initialQuery = typeof params.q === "string" ? params.q.trim() : "";
   const overview = await getChatOverview(user);
   const teams = await getUserTeams(user.id);
-  const initialMessages = overview.latestSession ? await getChatMessages(overview.latestSession.id, user) : [];
+  const initialMessages = initialQuery || !overview.latestSession ? [] : await getChatMessages(overview.latestSession.id, user);
 
   return (
     <ChatWorkspace
@@ -17,8 +25,9 @@ export default async function ChatPage() {
       sessions={overview.sessions}
       initialMessages={initialMessages as any}
       teams={teams}
-      initialSessionId={overview.latestSession?.id ?? null}
+      initialSessionId={initialQuery ? null : overview.latestSession?.id ?? null}
+      initialDraft={initialQuery}
+      autoSubmitQuestion={Boolean(initialQuery)}
     />
   );
 }
-

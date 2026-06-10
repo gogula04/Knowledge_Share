@@ -46,7 +46,13 @@ export default async function AnalyticsPage() {
           <Card className="border-border/80 bg-bg/40 p-4">
             <p className="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Most searched topics</p>
             <div className="mt-4">
-              <Sparkline values={topSearchCounts.length ? topSearchCounts : [1, 2, 3, 2, 4, 5]} />
+              {topSearchCounts.length ? (
+                <Sparkline values={topSearchCounts} />
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border/80 bg-bg/20 p-4 text-sm text-muted-foreground">
+                  No search analytics yet.
+                </div>
+              )}
             </div>
           </Card>
           <Card className="border-border/80 bg-bg/40 p-4">
@@ -164,4 +170,3 @@ export default async function AnalyticsPage() {
     </div>
   );
 }
-

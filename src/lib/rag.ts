@@ -111,92 +111,96 @@ export async function retrieveRelevantChunks({
   teamId,
   maxResults = 8
 }: RetrievalInput) {
-  const embedding = await embedText(question);
-  const teams = await getUserTeams(user.id);
-  const teamIds = teams.map((team) => team.id);
-  const activeTeamIds = scope === "common" ? [] : teamId ? teamIds.filter((id) => id === teamId) : teamIds;
-  const includeCommon = scope === "team" ? false : true;
+  try {
+    const embedding = await embedText(question);
+    const teams = await getUserTeams(user.id);
+    const teamIds = teams.map((team) => team.id);
+    const activeTeamIds = scope === "common" ? [] : teamId ? teamIds.filter((id) => id === teamId) : teamIds;
+    const includeCommon = scope === "team" ? false : true;
 
-  const rows = await query<{
-    chunk_id: string;
-    chunk_index: number;
-    text: string;
-    semantic_score: number;
-    document_id: string;
-    title: string;
-    source_type: string;
-    workspace_type: string;
-    team_name: string | null;
-    team_id: string | null;
-    source_link: string | null;
-    authority: number;
-    last_indexed_at: string | null;
-    category: string | null;
-    tags: string[];
-    fresh_status: string | null;
-  }>(
-    `with candidate_chunks as (
-       select
-         dc.id as chunk_id,
-         dc.chunk_index,
-         dc.content as text,
-         1 - (dc.embedding <=> $1::vector) as semantic_score,
-         d.id as document_id,
-         d.title,
-         d.source_type,
-         d.workspace_type,
-         t.name as team_name,
-         d.team_id,
-         d.original_source_link as source_link,
-         d.source_authority_level as authority,
-         d.last_indexed_at,
-         d.category,
-         d.tags,
-         d.fresh_status
-       from document_chunks dc
-       join documents d on d.id = dc.document_id
-       left join teams t on t.id = d.team_id
-         where d.is_active = true
-         and (
-           ($2::boolean = true and d.workspace_type = 'common')
-           or
-           ($3::uuid[] <> '{}'::uuid[] and d.workspace_type = 'team' and d.team_id = any($3::uuid[]))
-         )
-       order by dc.embedding <=> $1::vector asc
-       limit 24
-     )
-     select * from candidate_chunks`,
-    [vectorLiteral(embedding), includeCommon, activeTeamIds]
-  );
+    const rows = await query<{
+      chunk_id: string;
+      chunk_index: number;
+      text: string;
+      semantic_score: number;
+      document_id: string;
+      title: string;
+      source_type: string;
+      workspace_type: string;
+      team_name: string | null;
+      team_id: string | null;
+      source_link: string | null;
+      authority: number;
+      last_indexed_at: string | null;
+      category: string | null;
+      tags: string[];
+      fresh_status: string | null;
+    }>(
+      `with candidate_chunks as (
+         select
+           dc.id as chunk_id,
+           dc.chunk_index,
+           dc.content as text,
+           1 - (dc.embedding <=> $1::vector) as semantic_score,
+           d.id as document_id,
+           d.title,
+           d.source_type,
+           d.workspace_type,
+           t.name as team_name,
+           d.team_id,
+           d.original_source_link as source_link,
+           d.source_authority_level as authority,
+           d.last_indexed_at,
+           d.category,
+           d.tags,
+           d.fresh_status
+         from document_chunks dc
+         join documents d on d.id = dc.document_id
+         left join teams t on t.id = d.team_id
+           where d.is_active = true
+           and (
+             ($2::boolean = true and d.workspace_type = 'common')
+             or
+             ($3::uuid[] <> '{}'::uuid[] and d.workspace_type = 'team' and d.team_id = any($3::uuid[]))
+           )
+         order by dc.embedding <=> $1::vector asc
+         limit 24
+       )
+       select * from candidate_chunks`,
+      [vectorLiteral(embedding), includeCommon, activeTeamIds]
+    );
 
-  const ranked: RetrievedChunk[] = rows.map((row) => {
-    const freshness = freshnessWeight(row.last_indexed_at);
-    const authority = authorityWeight(row.authority);
-    const keyword = tokenOverlap(question, row.title + " " + row.text + " " + row.category + " " + row.tags.join(" "));
-    const workspace = workspaceWeight(scope, row.workspace_type, teamId, row.team_id);
-    const semanticScore = Number(row.semantic_score);
-    const totalScore = semanticScore * 0.68 + freshness + authority + workspace + keyword * 0.25;
-    return {
-      chunkId: row.chunk_id,
-      chunkIndex: row.chunk_index,
-      documentId: row.document_id,
-      title: row.title,
-      sourceLink: row.source_link,
-      sourceType: row.source_type as RetrievedChunk["sourceType"],
-      workspaceType: row.workspace_type as RetrievedChunk["workspaceType"],
-      teamName: row.team_name,
-      snippet: row.text.slice(0, 280),
-      authority: row.authority,
-      freshness: row.fresh_status ?? (estimateFreshnessDays(row.last_indexed_at) <= staleThresholdDays ? "fresh" : "stale"),
-      semanticScore,
-      totalScore,
-      text: row.text
-    };
-  });
+    const ranked: RetrievedChunk[] = rows.map((row) => {
+      const freshness = freshnessWeight(row.last_indexed_at);
+      const authority = authorityWeight(row.authority);
+      const keyword = tokenOverlap(question, row.title + " " + row.text + " " + row.category + " " + row.tags.join(" "));
+      const workspace = workspaceWeight(scope, row.workspace_type, teamId, row.team_id);
+      const semanticScore = Number(row.semantic_score);
+      const totalScore = semanticScore * 0.68 + freshness + authority + workspace + keyword * 0.25;
+      return {
+        chunkId: row.chunk_id,
+        chunkIndex: row.chunk_index,
+        documentId: row.document_id,
+        title: row.title,
+        sourceLink: row.source_link,
+        sourceType: row.source_type as RetrievedChunk["sourceType"],
+        workspaceType: row.workspace_type as RetrievedChunk["workspaceType"],
+        teamName: row.team_name,
+        snippet: row.text.slice(0, 280),
+        authority: row.authority,
+        freshness: row.fresh_status ?? (estimateFreshnessDays(row.last_indexed_at) <= staleThresholdDays ? "fresh" : "stale"),
+        semanticScore,
+        totalScore,
+        text: row.text
+      };
+    });
 
-  return ranked
-    .sort((a, b) => b.totalScore - a.totalScore)
-    .slice(0, maxResults);
+    return ranked
+      .sort((a, b) => b.totalScore - a.totalScore)
+      .slice(0, maxResults);
+  } catch {
+    return [];
+  }
 }
 
 function buildExtractiveAnswer(question: string, chunks: RetrievedChunk[], noRelevantInfo: boolean) {
@@ -262,40 +266,40 @@ async function generateLLMAnswer(question: string, chunks: RetrievedChunk[], sco
   if (!client) return null;
   if (chunks.length === 0) return null;
 
-  const response = await client.chat.completions.create({
-    model: poolside ? env.POOLSIDE_MODEL : env.OPENAI_CHAT_MODEL,
-    temperature: 0.1,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `You are ${poolside ? `the ${env.POOLSIDE_AGENT} agent for FMS Knowledge Workspace` : "FMS Knowledge Workspace"}, an internal knowledge assistant. Answer only from the provided sources. If evidence is insufficient, say so clearly. Always include citations by documentId. Do not infer unsupported facts. Mention stale or conflicting sources when relevant. Return JSON with keys: answer, confidence, citations, staleWarning, conflicts, noRelevantInfo, followUps.`
-      },
-      {
-        role: "user",
-        content: JSON.stringify({
-          question,
-          scope,
-          sources: chunks.map((chunk, index) => ({
-            index,
-            documentId: chunk.documentId,
-            title: chunk.title,
-            sourceLink: chunk.sourceLink,
-            workspaceType: chunk.workspaceType,
-            teamName: chunk.teamName,
-            authority: chunk.authority,
-            freshness: chunk.freshness,
-            snippet: chunk.snippet
-          }))
-        })
-      }
-    ]
-  });
-
-  const content = response.choices[0]?.message?.content;
-  if (!content) return null;
-
   try {
+    const response = await client.chat.completions.create({
+      model: poolside ? env.POOLSIDE_MODEL : env.OPENAI_CHAT_MODEL,
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `You are ${poolside ? `the ${env.POOLSIDE_AGENT} agent for FMS Knowledge Workspace` : "FMS Knowledge Workspace"}, an internal knowledge assistant. Answer only from the provided sources. If evidence is insufficient, say so clearly. Always include citations by documentId. Do not infer unsupported facts. Mention stale or conflicting sources when relevant. Return JSON with keys: answer, confidence, citations, staleWarning, conflicts, noRelevantInfo, followUps.`
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            question,
+            scope,
+            sources: chunks.map((chunk, index) => ({
+              index,
+              documentId: chunk.documentId,
+              title: chunk.title,
+              sourceLink: chunk.sourceLink,
+              workspaceType: chunk.workspaceType,
+              teamName: chunk.teamName,
+              authority: chunk.authority,
+              freshness: chunk.freshness,
+              snippet: chunk.snippet
+            }))
+          })
+        }
+      ]
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return null;
+
     return JSON.parse(content) as Partial<ChatAnswer>;
   } catch {
     return null;
@@ -303,11 +307,11 @@ async function generateLLMAnswer(question: string, chunks: RetrievedChunk[], sco
 }
 
 export async function answerQuestion(input: RetrievalInput) {
-  const chunks = await retrieveRelevantChunks(input);
+  const chunks = await retrieveRelevantChunks(input).catch(() => []);
   const citations = buildCitations(chunks);
   const noRelevantInfo = chunks.length === 0 || (chunks[0]?.semanticScore ?? 0) < 0.18;
   const extractive = buildExtractiveAnswer(input.question, chunks, noRelevantInfo);
-  const llm = await generateLLMAnswer(input.question, chunks, input.scope);
+  const llm = await generateLLMAnswer(input.question, chunks, input.scope).catch(() => null);
   const conflicts = buildConflictHint(chunks);
   const staleWarning = chunks.some((chunk) => chunk.freshness !== "fresh");
   const confidence = llm?.confidence && ["high", "medium", "low"].includes(llm.confidence) ? (llm.confidence as ChatAnswer["confidence"]) : extractive.confidence;
